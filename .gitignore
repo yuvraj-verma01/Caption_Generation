@@ -1,0 +1,15 @@
+models/
+raw/
+resized/
+data/
+blip_finetuned_artemis/
+vit_gpt2_artemis_small/
+
+# Ignore Jupyter checkpoints
+.ipynb_checkpoints/
+
+# Heavy file formats
+*.pt
+*.model
+*.pkl
+*.txt
