@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 import ast
 import pickle
@@ -12,13 +12,7 @@ from torch.utils.data import Dataset
 
 
 class ArtEmisCaptionDataset(Dataset):
-    """
-    Returns:
-      - image: 3 x H x W float tensor
-      - caption_in:  max_len-1 LongTensor (input tokens)
-      - caption_out: max_len-1 LongTensor (target tokens)
-      - length:      original (non-padded) caption length
-    """
+   
     def __init__(
         self,
         csv_path: str,
@@ -29,10 +23,27 @@ class ArtEmisCaptionDataset(Dataset):
         self.vocab_path = Path(vocab_path)
         self.transform = transform
 
-        # Load dataframe
-        self.df = pd.read_csv(self.csv_path)
 
-        # Load vocab
+        df = pd.read_csv(self.csv_path)
+
+        if "img_resized_path" not in df.columns:
+            raise ValueError(f"'img_resized_path' column not found in {self.csv_path}")
+
+        if "tokens_encoded" not in df.columns:
+            raise ValueError(f"'tokens_encoded' column not found in {self.csv_path}")
+
+       
+        df = df[df["img_resized_path"].notna()].copy()
+        df = df[df["tokens_encoded"].notna()].copy()
+
+        
+        df["img_resized_path"] = df["img_resized_path"].astype(str)
+
+  
+        df = df.reset_index(drop=True)
+        self.df = df
+
+        
         with open(self.vocab_path, "rb") as f:
             vocab = pickle.load(f)
 
@@ -41,16 +52,16 @@ class ArtEmisCaptionDataset(Dataset):
         self.max_len = vocab["max_len"]
         self.special_tokens = vocab["special_tokens"]
 
-        # Pre-cache the things we need as lists (faster than hitting df every time)
+        
         self.img_paths = self.df["img_resized_path"].tolist()
 
-        # tokens_encoded column is stored as a string representation of a list → parse
+        
         raw_enc = self.df["tokens_encoded"].tolist()
         self.encoded_caps = [
             ast.literal_eval(x) if isinstance(x, str) else x for x in raw_enc
         ]
 
-        # If tokens_len not stored, compute from encoded (non-pad tokens)
+       
         if "tokens_len" in self.df.columns:
             self.lengths = self.df["tokens_len"].tolist()
         else:
@@ -63,18 +74,17 @@ class ArtEmisCaptionDataset(Dataset):
         return len(self.df)
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, int]:
-        # ---- image ----
-        img_path = Path(self.img_paths[idx])
+       
+        img_path = Path(self.img_paths[idx]) 
         img = Image.open(img_path).convert("RGB")
         if self.transform is not None:
             img = self.transform(img)
 
-        # ---- caption (already [<start> ... <end> ... <pad>]) ----
+        
         enc = self.encoded_caps[idx]
 
-        # Ensure correct length (just in case)
+        
         if len(enc) != self.max_len:
-            # pad / cut
             pad_id = self.special_tokens["<pad>"]
             if len(enc) < self.max_len:
                 enc = enc + [pad_id] * (self.max_len - len(enc))
@@ -83,13 +93,9 @@ class ArtEmisCaptionDataset(Dataset):
 
         enc = torch.tensor(enc, dtype=torch.long)
 
-        # Typical seq2seq setup:
-        #   caption_in  = [<start>, w1, w2, ..., w_{n-1}]
-        #   caption_out = [w1, w2, ..., w_{n-1}, <end>]
-        caption_in = enc[:-1]   # drop last token
-        caption_out = enc[1:]   # drop first token
-
+        
+        caption_in = enc[:-1]   
+        caption_out = enc[1:]   
         length = self.lengths[idx]
 
         return img, caption_in, caption_out, length
-

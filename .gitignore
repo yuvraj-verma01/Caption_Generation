@@ -13,3 +13,7 @@ vit_gpt2_artemis_small/
 *.model
 *.pkl
 *.txt
+__pycache__/
+*.pyc
+__pycache__/
+*.pyc
